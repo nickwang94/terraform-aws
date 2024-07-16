@@ -7,6 +7,7 @@ variable subnet_cidr_block {}
 variable avail_zone {}
 variable env_prefix {}
 variable my_ip {}
+variable instance_type {}
 
 
 resource "aws_vpc" "myapp-vpc" {
@@ -60,7 +61,7 @@ resource "aws_security_group" "myapp-sg" {
     from_port = 22
     to_port = 22
     protocol = "tcp"
-    cidr_blocks = [var.my_ip]
+    cidr_blocks = var.my_ip
   }
 
   ingress {
@@ -81,4 +82,39 @@ resource "aws_security_group" "myapp-sg" {
   tags = {
     Name: "${var.env_prefix}-sg"
   }
+}
+
+# EC2 instance
+data "aws_ami" "latest-amazon-linux-image" {
+  most_recent = true
+  owners = ["amazon"]
+  filter {
+    name = "name"
+    values = [ "amzn2-ami-hvm-*-x86_64-gp2" ]
+  }
+}
+
+output "aws_ami_id" {
+  value = data.aws_ami.latest-amazon-linux-image
+}
+
+resource "aws_instance" "myapp-server" {
+    ami = data.aws_ami.latest-amazon-linux-image.id
+    instance_type = var.instance_type
+
+    # optional
+    subnet_id = aws_subnet.myapp-subnet-1.id
+    vpc_security_group_ids = [ aws_security_group.myapp-sg.id ]
+    availability_zone = var.avail_zone
+    associate_public_ip_address = true
+
+    # SSH
+    # You need to create key pair via AWS, then mv pem file into ~/.ssh
+    # then chmod 400 that pem file
+    # AWS rejects ssh request, if permission not set correctly 
+    key_name = "server-key-pair"
+
+    tags = {
+      Name: "${var.env_prefix}-server"
+    }
 }
