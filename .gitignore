@@ -4,3 +4,6 @@
 # tf state files
 *.tfstate
 *.tfstate.*
+
+# ignore the terraform variable file, since some personal data
+*.tfvars
