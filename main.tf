@@ -8,6 +8,8 @@ variable avail_zone {}
 variable env_prefix {}
 variable my_ip {}
 variable instance_type {}
+variable public_key_location {}
+variable key_pair {}
 
 
 resource "aws_vpc" "myapp-vpc" {
@@ -26,20 +28,6 @@ resource "aws_subnet" "myapp-subnet-1" {
   }
 }
 
-# Route Table, like a virtual router
-resource "aws_route_table" "myapp-route-table" {
-  vpc_id = aws_vpc.myapp-vpc.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.myapp-igw.id
-  }
-  tags = {
-    Name: "${var.env_prefix}-rtb"
-  }
-}
-
-# Terraform knows in which sequence the components must be created
-# Internet Gateway, like a virtual modem
 resource "aws_internet_gateway" "myapp-igw" {
   vpc_id = aws_vpc.myapp-vpc.id
   tags = {
@@ -47,26 +35,40 @@ resource "aws_internet_gateway" "myapp-igw" {
   }
 }
 
-resource "aws_route_table_association" "a-rtb-subnet" {
-  subnet_id = aws_subnet.myapp-subnet-1.id
-  route_table_id = aws_route_table.myapp-route-table.id
+resource "aws_default_route_table" "main-rtb" {
+  default_route_table_id = aws_vpc.myapp-vpc.default_route_table_id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.myapp-igw.id
+  }
+
+  tags = {
+    Name: "${var.env_prefix}-main-rtb"
+  }
 }
 
-# Security Grouo
-resource "aws_security_group" "myapp-sg" {
-  name = "myapp-sg"
+# Security Group
+resource "aws_default_security_group" "default-sg" {
   vpc_id = aws_vpc.myapp-vpc.id
-  # Incoming Triffic
+
   ingress {
     from_port = 22
     to_port = 22
     protocol = "tcp"
-    cidr_blocks = var.my_ip
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port = 8080
-    to_port = 8080
+    from_port = 443
+    to_port = 443
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port = 80
+    to_port = 80
     protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -80,7 +82,7 @@ resource "aws_security_group" "myapp-sg" {
   }
 
   tags = {
-    Name: "${var.env_prefix}-sg"
+    Name: "${var.env_prefix}-default-sg"
   }
 }
 
@@ -90,31 +92,28 @@ data "aws_ami" "latest-amazon-linux-image" {
   owners = ["amazon"]
   filter {
     name = "name"
-    values = [ "amzn2-ami-hvm-*-x86_64-gp2" ]
+    values = [ "al2023-ami-2023.5.20240708.0-kernel-6.1-x86_64" ]
+    
   }
 }
 
+# ami-013a28d7c2ea10269
 output "aws_ami_id" {
   value = data.aws_ami.latest-amazon-linux-image
 }
 
 resource "aws_instance" "myapp-server" {
-    ami = data.aws_ami.latest-amazon-linux-image.id
-    instance_type = var.instance_type
+  ami = data.aws_ami.latest-amazon-linux-image.id
+  instance_type = var.instance_type
 
-    # optional
-    subnet_id = aws_subnet.myapp-subnet-1.id
-    vpc_security_group_ids = [ aws_security_group.myapp-sg.id ]
-    availability_zone = var.avail_zone
-    associate_public_ip_address = true
+  # optional
+  subnet_id = aws_subnet.myapp-subnet-1.id
+  vpc_security_group_ids = [ aws_default_security_group.default-sg.id ]
+  availability_zone = var.avail_zone
+  associate_public_ip_address = true
+  key_name = var.key_pair
 
-    # SSH
-    # You need to create key pair via AWS, then mv pem file into ~/.ssh
-    # then chmod 400 that pem file
-    # AWS rejects ssh request, if permission not set correctly 
-    key_name = "server-key-pair"
-
-    tags = {
-      Name: "${var.env_prefix}-server"
-    }
+  tags = {
+    Name: "${var.env_prefix}-server"
+  }
 }
